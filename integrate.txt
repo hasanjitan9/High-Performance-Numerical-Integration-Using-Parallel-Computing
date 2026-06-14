@@ -1,0 +1,96 @@
+
+What I did
+-----
+func.cpp: Implements float func(float x) = x^2 + 3x + 10.
+
+integrate.cpp: the sequential version  of program it read a n and n from commands check if 
+input valid and use trapezoid rule to calculate area and call func() from func.cpp
+
+mpi_integrate_v1.cpp: split work between all mpi processes so each calculates its own part of area and send result to process 0 using MPI_Send and MPI_Recv then process 0 add all parts together
+
+mpi_integrate_v2.cpp: Same as v1, but process 0 receives from any proccess using MPI_ANY_SOURCE
+
+mpi_integrate_v3.cpp: Same computation as v1, but use MPI_Reduce with MPI_SUM to collect and sum results automatically  
+
+Makefile: compile all the programs and include simple test commands 
+----------------------------------------------------------
+
+discussion
+in v1 i tested 1,2,4,6 processes using n=1000000
+
+#proccesess   time (microseconds) result 
+ 
+1               3803                73.4958
+2               1929                73.503
+4               2053                73.502
+6               694                 73.5013
+
+the execution time decreased as number of processes increased however in 2 and 4 performance was not perfect due to communication overhead and system load 
+
+now v2 same processes and n for v1
+
+1               3703          73.4958
+2               2164          73.503
+4               2366          73.502
+6               2025          73.5013
+
+shows better and more stable results but the speedup still limited by mpi communication 
+
+now v3 same processes and n for v1
+1               3737          73.4958
+2               2062          73.503
+4               1194          73.502
+6               851           73.5013
+
+v3 used collective communication(MPI_Reduce) results are smother and more consistent it was the fastest and more stable 
+------------------------------------------------------------------------------
+Pseudocode
+
+Input: a, b, n
+step = (b - a) / n
+
+// Sequential
+area = 0
+for i in 0..n-1:
+  xLeft = a + i*step
+  xRight = xLeft + step
+  area += (func(xLeft) + func(xRight)) * 0.5 * step
+print area
+
+// Parallel setup (common)
+rank = MPI_Comm_rank()
+size = MPI_Comm_size()
+baseChunk = n / size
+leftover = n % size
+chunkCount = baseChunk + (rank < leftover ? 1 : 0)
+firstIndex = rank * baseChunk + (rank < leftover ? rank : leftover)
+localStart = a + firstIndex * step
+partialArea = 0
+for i in 0..chunkCount-1:
+  xLeft = localStart + i*step
+  xRight = xLeft + step
+  partialArea += (func(xLeft) + func(xRight)) * 0.5 * step
+
+// v1
+if rank == 0:
+  totalArea = partialArea
+  for src in 1..size-1:
+    recv val from src
+    totalArea += val
+  print totalArea
+else:
+  send partialArea to 0
+
+// v2
+if rank == 0:
+  totalArea = partialArea
+  repeat size-1 times:
+    recv val from ANY_SOURCE
+    totalArea += val
+  print totalArea
+else:
+  send partialArea to 0
+
+// v3
+MPI_Reduce(partialArea, totalArea, SUM, root=0)
+if rank == 0: print totalArea
